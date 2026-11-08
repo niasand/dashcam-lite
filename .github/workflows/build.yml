@@ -58,8 +58,27 @@ jobs:
             echo "No signing secrets; release APK will use the debug keystore."
           fi
 
+      - name: Install Gradle distribution
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/gradle.zip"
+          urls=(
+            "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"
+            "https://github.com/gradle/gradle-distributions/releases/download/v8.11.1/gradle-8.11.1-bin.zip"
+          )
+          ok=0
+          for url in "${urls[@]}"; do
+            if curl -fL --retry 5 --retry-all-errors --retry-delay 3 -o "$dest" "$url"; then
+              ok=1
+              break
+            fi
+          done
+          test "$ok" = 1
+          unzip -q "$dest" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.11.1/bin" >> "$GITHUB_PATH"
+
       - name: Test and assemble
-        run: ./gradlew test assembleDebug assembleRelease --stacktrace
+        run: gradle test assembleDebug assembleRelease --stacktrace
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
