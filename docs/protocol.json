@@ -1,0 +1,189 @@
+{
+  "source": {
+    "package": "com.tima.carnet.m.main",
+    "name": "钛马星",
+    "newer": {
+      "file": "5.4.240904.1_v_APKPure.apk",
+      "versionName": "5.4.240904.1_v",
+      "versionCode": 417254413,
+      "sha256": "e2ee69f1a34b0d57af1b4d256f65241db567e0c54c076e36dfddcb992d986224"
+    },
+    "older": {
+      "file": "5.3.220526.1_APKPure.apk",
+      "versionName": "5.3.220526.1",
+      "versionCode": 416535331,
+      "sha256": "deebe901d6fa888b46ef26b8cdf27b43357c236279baa64c71b4e6e23617e3cd"
+    },
+    "minSdk": 23,
+    "targetSdk": 28,
+    "compileSdk": 31,
+    "certificate": {
+      "subject": "CN=carnet",
+      "sha256": "ce058f4172009694380fe0883e9a58b2daadf5e32e35d0aba6e2a626523959b3",
+      "serial": "4A447712",
+      "notBefore": "2015-01-12T11:35:03Z",
+      "notAfter": "2040-01-06T11:35:03Z",
+      "schemes": ["v1", "v2"]
+    }
+  },
+  "wifi": {
+    "bind": "ConnectivityManager.requestNetwork(TRANSPORT_WIFI without NET_CAPABILITY_INTERNET) then bindProcessToNetwork",
+    "originalClass": "com.tima.carnet.util.WiFiUtils",
+    "originalMethods": ["lockWiFiNetwork", "bindNetwork", "unBindWifiNetwork"],
+    "usesWifiNetworkSpecifier": false,
+    "ssidHints": ["dvr", "mini", "papago", "mxsx", "mtsx", "teye", "wjc", "cardv", "wykj", "lld", "decai"],
+    "ssidClass": "com.tima.app.common.dr.connect.DRWifiNameKit.guessDVRWifi",
+    "ble": "none for the dashcam link"
+  },
+  "vendors": {
+    "novatek": {
+      "classes": [
+        "com.tima.lib.dr.res.devices.novatek.device.beans.DeviceRequest",
+        "com.tima.lib.dr.res.devices.novatek.device.DeviceApi",
+        "com.tima.app.dr.novatek.device.DeviceKit",
+        "com.tima.app.dr.novatek.helper.DrCallbackImpl"
+      ],
+      "defaultHost": "192.168.1.254",
+      "live": ["rtsp://{host}/xxxx.mov", "http://{host}:8192"],
+      "notifyTcp": 3333,
+      "heartbeat": {"cmd": 3016, "intervalMs": 5000, "note": "NovaHeartBeatKit default; base plugin starts the TCP listener, several OEM plugins also start HTTP heartbeat on connect"},
+      "commands": {
+        "fileList": "GET /?custom=1&cmd=3015",
+        "thumb": "{fileUrl}?custom=1&cmd=4001",
+        "download": "GET http://{host}{path-from-first-slash-of-FPATH}",
+        "delete": "GET /?custom=1&cmd=4003&str={FPATH}",
+        "recordStatus": "GET /?custom=1&cmd=2016",
+        "recordOn": "GET /?custom=1&cmd=2001&par=1",
+        "recordOff": "GET /?custom=1&cmd=2001&par=0",
+        "modePhoto": "GET /?custom=1&cmd=3001&par=0",
+        "modeMovie": "GET /?custom=1&cmd=3001&par=1",
+        "modePlayback": "GET /?custom=1&cmd=3001&par=2",
+        "settings": "GET /?custom=1&cmd=3014",
+        "setByPar": "GET /?custom=1&cmd={id}&par={value}",
+        "date": "GET /?custom=1&cmd=3005&str=yyyy-MM-dd",
+        "time": "GET /?custom=1&cmd=3006&str=HH:mm:ss",
+        "format": "GET /?custom=1&cmd=3010",
+        "firmware": "GET /?custom=1&cmd=3012",
+        "freeSpace": "GET /?custom=1&cmd=3017",
+        "sdStatus": "GET /?custom=1&cmd=3024",
+        "switchCamera": "GET /?custom=1&cmd=3028&par={0-5}",
+        "wifiInfo": "GET /?custom=1&cmd=3029",
+        "capture": "GET /?custom=1&cmd=1001"
+      },
+      "fileKinds": {
+        "normal": "not picture and (ATTR & 1) == 0",
+        "event": "not picture and (ATTR & 1) == 1",
+        "photo": "name ends with JPG or JPEG"
+      },
+      "resume": ["GET /?custom=1&cmd=3001&par=1", "GET /?custom=1&cmd=2001&par=1"]
+    },
+    "mstar": {
+      "classes": ["com.tima.lib.dr.res.devices.mstar.device.DeviceApi", "com.tima.app.dr.mstar.device.DeviceKit"],
+      "defaultHost": "192.72.1.1",
+      "live": "rtsp://{host}/liveRTSP/av{n}",
+      "files": "GET /cgi-bin/Config.cgi?action=dir|reardir&property=Normal|Event|Park|Photo&format=all|jpeg&count=&from=",
+      "recordToggle": "GET /cgi-bin/Config.cgi?action=set&property=Video&value=record",
+      "recordStatus": "property=Camera.Preview.MJPEG.status.record value Recording|Standby",
+      "delete": "action=del&property={path}",
+      "time": "action=set&property=TimeSettings&value=yyyy$MM$dd$HH$mm$ss",
+      "format": "action=set&property=SD0&value=format",
+      "menu": "GET /cdv/cammenu.xml",
+      "camera": "action=setcamid&property=Camera.Preview.Source.1.Camid&value=front|rear",
+      "resume": "set Video=record if status is not Recording"
+    },
+    "hisilicon": {
+      "classes": ["com.tima.lib.dr.res.devices.hisilicon.device.DeviceApi", "com.tima.lib.dr.res.devices.hisilicon.device.MediaFoldersKit"],
+      "defaultHost": "192.168.11.1",
+      "prefix": "/cgi-bin/hisnet/",
+      "live": ["rtsp://{host}:554/livestream/{cam}", "http://{host}:8192"],
+      "register": "client.cgi?&-operation=register&-ip={phone}",
+      "unregister": "client.cgi?&-operation=unregister&-ip={phone}",
+      "heartbeat": "checkconnect.cgi?&-ip={phone} every 3000ms",
+      "files": "getdirfilelist.cgi?&-dir=norm|emr|park|photo|back_norm&-start=&-end=",
+      "delete": "deletefile.cgi?&-name=",
+      "recordStart": ["setworkmode.cgi?&-workmode=NORM_REC", "workmodecmd.cgi?&-cmd=start"],
+      "recordStop": "workmodecmd.cgi?&-cmd=stop",
+      "time": "setsystime.cgi?&-time=yyyyMMddHHmmss",
+      "format": "sdcommand.cgi?&-format=",
+      "info": "getdeviceattr.cgi",
+      "resume": "workmode NORM_REC then workmodecmd start, then unregister on full disconnect"
+    },
+    "goke": {
+      "classes": ["com.tima.app.dr.goke.device.DeviceApi", "com.tima.app.dr.goke.eyes.setting.config.Keys"],
+      "defaultHost": "192.168.63.9",
+      "prefix": "/cgi-bin/Control.cgi",
+      "live": ["rtsp://{host}/live/udp/ch1_0", "rtsp://{host}/live/udp/ch3_0"],
+      "heartbeat": "type=hbt every 5000ms",
+      "files": {
+        "normal": "type=file&action=searchfile",
+        "event": "type=file&action=searchevent",
+        "photo": "type=image&action=searchimg"
+      },
+      "paths": {
+        "video": "/sdcard/DVR/VIDEO/",
+        "event": "/sdcard/DVR/EVENT/",
+        "photo": "/sdcard/DVR/PIC/"
+      },
+      "recordOn": "type=system&action=setrecstatus&recstat=1",
+      "recordOff": "type=system&action=setrecstatus&recstat=0",
+      "time": "type=system&action=setdatetime",
+      "format": "type=system&action=formattf",
+      "firmware": "type=system&action=getversion"
+    },
+    "grain": {
+      "classes": ["com.tima.lib.dr.res.devices.grain.device.beans.DeviceRequest", "com.tima.app.dr.grain.device.DeviceKit"],
+      "defaultHost": "192.168.201.1",
+      "live": "rtsp://{host}/live/ch00_0",
+      "query": "/?cmd={id}&type=&param=&value=",
+      "commands": {
+        "startRecord": 101,
+        "stopRecord": 102,
+        "recordStatus": 103,
+        "switchCamera": 104,
+        "capture": 105,
+        "fileList": 201,
+        "delete": 202,
+        "setSetting": 301,
+        "getSetting": 302,
+        "allSettings": 303,
+        "deviceInfo": 305,
+        "time": 306,
+        "format": 308,
+        "heartbeat": 501
+      },
+      "fileTypes": {"normal": 0, "event": 1, "park": 2, "photo": 3},
+      "heartbeatMs": 10000
+    },
+    "jieli": {
+      "classes": ["com.tima.app.dr.jieli.device.beans.BaseData", "com.tima.app.dr.jieli.device.DeviceApi", "com.tima.app.dr.jieli.device.DeviceMinaEngine"],
+      "defaultHost": "192.168.1.1",
+      "tcp": 3333,
+      "httpFiles": "http://{host}:8080/{path}",
+      "frame": "CTP: + uint16le topicLen + topic + uint32le jsonLen + json {op,param}",
+      "topics": {
+        "enter": {"op": "PUT", "topic": "APP_ACCESS", "param": {"type": "0", "ver": "1.0"}},
+        "heartbeat": {"op": "GET", "topic": "CTP_KEEP_ALIVE"},
+        "files": {"op": "PUT", "topic": "FORWARD_MEDIA_FILES_LIST", "param": {"type": "1"}},
+        "delete": {"op": "PUT", "topic": "FILES_DELETE", "param": {"path_0": "{path}"}},
+        "recordOn": {"op": "PUT", "topic": "VIDEO_CTRL", "param": {"status": "1"}},
+        "recordOff": {"op": "PUT", "topic": "VIDEO_CTRL", "param": {"status": "0"}},
+        "time": {"op": "PUT", "topic": "DATE_TIME"},
+        "format": {"op": "PUT", "topic": "FORMAT"}
+      },
+      "live": ["rtsp://{host}:554/avi_pcma_rt", "rtsp://{host}:554/264_rt/XXX.sd"]
+    },
+    "ark": {
+      "class": "com.tima.app.dr.ark.device.DeviceKit",
+      "defaultHost": "192.168.8.1",
+      "live": ["rtsp://{host}/xxxx.mov", "http://{host}:8192"],
+      "note": "same movie/http live shape as Novatek, different default gateway"
+    }
+  },
+  "resume": {
+    "ui": "com.tima.app.common.dr.play.PlayActivity.onPause and onDestroy call DrHelper.notifyDvrAppExit then startRecord or startRecordAsync",
+    "novatek": "DrCallbackImpl.startRecord -> switchModeMovie (3001 par=1) then DeviceApi.startRecord (2001 par=1)",
+    "enterFiles": "DrCallbackImpl.doOpenDrMediaList -> switchModePlayback (3001 par=2), which stops loop recording",
+    "disconnect": "DeviceKit.disConnect stops heartbeat, notify socket, and bindProcessToNetwork(null). It does not itself send 2001; the activity pause does.",
+    "processDeath": "No dedicated dashcam command in a sticky service. OEM plugins stop the heartbeat in disConnect. Novatek also drops TCP 3333. Firmware then times out back to recording. The rebuild sends the explicit resume sequence from a connectedDevice foreground service onTaskRemoved/onDestroy."
+  }
+}

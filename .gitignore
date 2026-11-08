@@ -1,0 +1,17 @@
+*.jks
+*.keystore
+*.apk
+*.apks
+*.aab
+local.properties
+.gradle/
+build/
+**/build/
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+decompiled/
+original-apk/
+*.dex
