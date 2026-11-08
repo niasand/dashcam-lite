@@ -63,9 +63,12 @@ jobs:
           set -euo pipefail
           dest="$RUNNER_TEMP/gradle.zip"
           urls=(
+            "https://mirrors.cloud.tencent.com/gradle/gradle-8.11.1-bin.zip"
+            "https://mirrors.huaweicloud.com/gradle/gradle-8.11.1-bin.zip"
+            "https://mirror.nju.edu.cn/gradle/gradle-8.11.1-bin.zip"
             "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"
-            "https://github.com/gradle/gradle-distributions/releases/download/v8.11.1/gradle-8.11.1-bin.zip"
           )
+          echo "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6  $dest" > "$RUNNER_TEMP/gradle.sha256"
           ok=0
           for url in "${urls[@]}"; do
             if curl -fL --retry 5 --retry-all-errors --retry-delay 3 -o "$dest" "$url"; then
@@ -74,6 +77,7 @@ jobs:
             fi
           done
           test "$ok" = 1
+          sha256sum -c "$RUNNER_TEMP/gradle.sha256"
           unzip -q "$dest" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-8.11.1/bin" >> "$GITHUB_PATH"
 
