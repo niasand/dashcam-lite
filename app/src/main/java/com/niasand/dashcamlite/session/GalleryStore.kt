@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.niasand.dashcamlite.protocol.ChunkCopy
 import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
 import java.io.File
@@ -46,7 +47,7 @@ class GalleryStore(private val context: Context) {
         } ?: error("保存到相册失败：系统没有返回文件地址（$relative）")
         try {
             resolver.openOutputStream(uri)?.use { output ->
-                localFile.inputStream().use { it.copyTo(output) }
+                localFile.inputStream().use { input -> ChunkCopy.copy(input, output) }
             } ?: error("保存到相册失败：打不开 $relative/$display")
             if (Build.VERSION.SDK_INT >= 29) {
                 val pending = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }

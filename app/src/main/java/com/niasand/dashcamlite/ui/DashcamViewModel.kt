@@ -12,6 +12,7 @@ import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
 import com.niasand.dashcamlite.protocol.ProtocolDetector
 import com.niasand.dashcamlite.protocol.describeFailure
+import com.niasand.dashcamlite.protocol.explainDownloadFailure
 import com.niasand.dashcamlite.protocol.SettingItem
 import com.niasand.dashcamlite.service.ConnectionService
 import com.niasand.dashcamlite.session.DashcamRuntime
@@ -166,26 +167,29 @@ class DashcamViewModel : ViewModel() {
             state = state.copy(downloads = rows, busy = true)
             chosen.forEachIndexed { index, file ->
                 val result = withContext(Dispatchers.IO) {
-                    runCatching {
+                    try {
                         val cache = java.io.File(app.cacheDir, "downloads")
                         val partial = java.io.File(cache, "${file.name.hashCode()}.part")
                         DashcamRuntime.withQuietLink {
                             DashcamRuntime.fetchToFile(file, partial) { done, total ->
-                                val progress = if (total <= 0) 0f else done.toFloat() / total
+                                val progress = if (total <= 0) 0f else done.toFloat() / total.coerceAtLeast(done)
                                 rows[index] = rows[index].copy(progress = progress)
                             }
                             gallery.publish(file, partial)
                         }
+                        Result.success(Unit)
+                    } catch (error: Throwable) {
+                        Result.failure(error)
                     }
                 }
                 rows[index] = if (result.isSuccess) {
                     rows[index].copy(progress = 1f, done = true, error = null)
                 } else {
                     rows[index].copy(
-                        error = describeFailure(
+                        error = explainDownloadFailure(
                             state.vendor.ifBlank { "未知" },
                             state.host,
-                            "下载 ${file.name}",
+                            file.name,
                             result.exceptionOrNull() ?: IllegalStateException("未知错误"),
                         ),
                     )

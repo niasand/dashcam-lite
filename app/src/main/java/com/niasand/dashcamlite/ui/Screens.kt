@@ -46,11 +46,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import com.niasand.dashcamlite.net.DashcamLink
-import com.niasand.dashcamlite.protocol.LiveCatalog
 import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
+import com.niasand.dashcamlite.protocol.shouldDecodeAsImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.io.SequenceInputStream
 
 private enum class Tab(val label: String) { Connect("连接"), Preview("预览"), Files("文件"), Settings("设置") }
 
@@ -225,19 +227,36 @@ private fun FileThumb(url: String, edge: Int = 64) {
     var error by remember(url) { mutableStateOf<String?>(null) }
     LaunchedEffect(url) {
         val loaded = withContext(Dispatchers.IO) {
-            runCatching {
-                val body = DashcamLink.transport().getBytes(url)
-                if (body.code !in 200..299) error("HTTP ${body.code}")
-                val options = BitmapFactory.Options().apply { inSampleSize = if (edge > 64) 2 else 4 }
-                BitmapFactory.decodeByteArray(body.bytes, 0, body.bytes.size, options)?.asImageBitmap()
-                    ?: error("不是图片")
-            }
+            runCatching { decodeBoundedImage(url) }
         }
         loaded.onSuccess { bitmap = it }.onFailure { error = it.message }
     }
     when {
         bitmap != null -> Image(bitmap!!, contentDescription = null, modifier = Modifier.size(edge.dp))
         error != null && edge > 64 -> Text("预览失败：$error", color = Color(0xFFFFB4A8))
+    }
+}
+
+private fun decodeBoundedImage(url: String): androidx.compose.ui.graphics.ImageBitmap {
+    DashcamLink.client().newCall(
+        okhttp3.Request.Builder().url(url).header("Connection", "close").build(),
+    ).execute().use { response ->
+        if (response.code !in 200..299) error("HTTP ${response.code}")
+        val body = response.body ?: error("没有图片数据")
+        val length = body.contentLength().takeIf { it >= 0 }
+        body.byteStream().use { raw ->
+            val magic = ByteArray(8)
+            val read = raw.read(magic)
+            val sniffed = if (read > 0) magic.copyOf(read) else ByteArray(0)
+            if (!shouldDecodeAsImage(length, sniffed)) error("不是图片，已跳过以免占满内存")
+            val stream = SequenceInputStream(ByteArrayInputStream(sniffed), raw)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 4
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            }
+            return BitmapFactory.decodeStream(stream, null, options)?.asImageBitmap()
+                ?: error("图片无法解码")
+        }
     }
 }
 

@@ -107,10 +107,14 @@ class OkHttpTransport(
             val code = response.code
             when {
                 code == 206 && existing > 0 -> java.io.FileOutputStream(dest, true).use { output ->
-                    body.byteStream().use { it.copyTo(output) }
+                    body.byteStream().use { input ->
+                        ChunkCopy.copy(input, output) { written -> onProgress(existing + written, -1) }
+                    }
                 }
                 code in 200..299 -> dest.outputStream().use { output ->
-                    body.byteStream().use { it.copyTo(output) }
+                    body.byteStream().use { input ->
+                        ChunkCopy.copy(input, output) { written -> onProgress(written, -1) }
+                    }
                 }
                 else -> error("HTTP $code $url")
             }
@@ -131,9 +135,13 @@ class OkHttpTransport(
         client.newCall(request).execute().use { response ->
             val body = response.body ?: error("HTTP ${response.code} $url 没有响应体")
             if (response.code !in 200..299) error("HTTP ${response.code} $url")
-            dest.outputStream().use { output -> body.byteStream().use { it.copyTo(output) } }
-            val reported = response.header("Content-Length")?.toLongOrNull() ?: dest.length()
-            onProgress(dest.length(), reported)
+            val reported = response.header("Content-Length")?.toLongOrNull()
+            dest.outputStream().use { output ->
+                body.byteStream().use { input ->
+                    ChunkCopy.copy(input, output) { written -> onProgress(written, reported ?: -1) }
+                }
+            }
+            onProgress(dest.length(), reported ?: dest.length())
         }
     }
 

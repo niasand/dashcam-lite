@@ -153,6 +153,36 @@ fun describeFailure(vendor: String, host: String, action: String, error: Throwab
     return "${action}失败（${vendor} @ ${host}）：${detail}"
 }
 
+fun explainDownloadFailure(vendor: String, host: String, name: String, error: Throwable): String {
+    val chain = generateSequence(error) { it.cause }.toList()
+    val storage = chain.any { isStorageFull(it) }
+    val oom = chain.any { it is OutOfMemoryError }
+    return when {
+        oom -> "内存不足，没能保存「$name」。下载已改为分块写入，请关掉其他应用后再试。（$vendor @ $host）"
+        storage -> "手机存储空间不足，无法保存「$name」。（$vendor @ $host）"
+        else -> describeFailure(vendor, host, "下载 $name", error)
+    }
+}
+
+fun isStorageFull(error: Throwable): Boolean {
+    val message = error.message.orEmpty()
+    return message.contains("ENOSPC", true) ||
+        message.contains("No space left", true) ||
+        message.contains("not enough space", true) ||
+        message.contains("存储空间不足")
+}
+
+/** 缩略图只接受小图。录像开头不是 JPEG/PNG，不能拿去解码。 */
+fun shouldDecodeAsImage(contentLength: Long?, magic: ByteArray): Boolean {
+    if (contentLength != null && contentLength > MAX_IMAGE_BYTES) return false
+    if (magic.size < 3) return false
+    val jpeg = magic[0] == 0xFF.toByte() && magic[1] == 0xD8.toByte() && magic[2] == 0xFF.toByte()
+    val png = magic[0] == 0x89.toByte() && magic[1] == 0x50.toByte() && magic[2] == 0x4E.toByte()
+    return jpeg || png
+}
+
+const val MAX_IMAGE_BYTES = 2L * 1024 * 1024
+
 object CameraHost {
     fun pick(gateway: String?, interfaceAddresses: List<String>, typed: String): String {
         val own = interfaceAddresses.map { it.substringBefore('%') }.toSet()

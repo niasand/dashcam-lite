@@ -127,6 +127,52 @@ class MediaPathTest {
     }
 
     @Test
+    fun chunkCopyNeverReadsMoreThanTheBuffer() {
+        val payload = ByteArray(20 * 1024) { it.toByte() }
+        val reads = mutableListOf<Int>()
+        val input = object : java.io.InputStream() {
+            private var pos = 0
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (pos >= payload.size) return -1
+                val n = minOf(len, payload.size - pos)
+                reads += n
+                System.arraycopy(payload, pos, b, off, n)
+                pos += n
+                return n
+            }
+            override fun read(): Int = error("unused")
+        }
+        val output = java.io.ByteArrayOutputStream()
+        val copied = ChunkCopy.copy(input, output)
+        assertEquals(payload.size.toLong(), copied)
+        assertTrue(reads.all { it <= ChunkCopy.BUFFER_BYTES })
+        assertTrue(output.toByteArray().contentEquals(payload))
+    }
+
+    @Test
+    fun downloadErrorsDistinguishMemoryStorageAndHttp() {
+        val oom = explainDownloadFailure("novatek", "192.168.1.254", "a.MOV", OutOfMemoryError("Java heap space"))
+        assertTrue(oom.contains("内存不足"))
+        assertFalse(oom.contains("HTTP"))
+        val disk = explainDownloadFailure("novatek", "192.168.1.254", "a.MOV", java.io.IOException("No space left on device"))
+        assertTrue(disk.contains("存储空间不足"))
+        assertFalse(disk.contains("内存不足"))
+        val http = explainDownloadFailure("mstar", "192.72.1.1", "a.MOV", IllegalStateException("HTTP 404 http://192.72.1.1/a.MOV"))
+        assertTrue(http.contains("404"))
+        assertFalse(http.contains("内存不足"))
+    }
+
+    @Test
+    fun videoMagicIsNotDecodedAsAPhoto() {
+        val ftyp = byteArrayOf(0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70)
+        assertFalse(shouldDecodeAsImage(50_000_000, ftyp))
+        assertFalse(shouldDecodeAsImage(null, ftyp))
+        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte())
+        assertTrue(shouldDecodeAsImage(80_000, jpeg))
+        assertFalse(shouldDecodeAsImage(MAX_IMAGE_BYTES + 1, jpeg))
+    }
+
+    @Test
     fun failureTextNamesChipAndHost() {
         val text = describeFailure("novatek", "192.168.1.254", "预览", IllegalStateException("HTTP 404 http://192.168.1.254/a.MOV"))
         assertTrue(text.contains("novatek"))

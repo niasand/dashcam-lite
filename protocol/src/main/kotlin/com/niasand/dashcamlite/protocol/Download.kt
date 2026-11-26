@@ -1,12 +1,34 @@
 package com.niasand.dashcamlite.protocol
 
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 
 object DownloadPlan {
     fun rangeHeader(existingBytes: Long): String? =
         if (existingBytes > 0) "bytes=$existingBytes-" else null
 
     fun appendResponse(code: Int): Boolean = code == 206
+}
+
+object ChunkCopy {
+    const val BUFFER_BYTES = 8 * 1024
+
+    /** 每次最多读 [BUFFER_BYTES]，不会把整个文件放进一个数组。 */
+    fun copy(input: InputStream, output: OutputStream, onBytes: (Long) -> Unit = {}): Long {
+        val buffer = ByteArray(BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read > 0) {
+                output.write(buffer, 0, read)
+                total += read
+                onBytes(total)
+            }
+        }
+        return total
+    }
 }
 
 class FileDownloader(private val http: HttpTransport) {
