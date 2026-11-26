@@ -324,20 +324,6 @@ class DashcamViewModel : ViewModel() {
         state = state.copy(openFile = file)
     }
 
-    fun switchCamera() {
-        viewModelScope.launch {
-            val side = withContext(Dispatchers.IO) { runCatching { DashcamRuntime.client?.switchCamera() }.getOrNull() }
-            val urls = DashcamRuntime.client?.liveCandidates().orEmpty()
-            state = state.copy(
-                status = "镜头：${side ?: "未连接"}",
-                liveCandidates = urls.ifEmpty { state.liveCandidates },
-                liveIndex = 0,
-                liveUrl = urls.firstOrNull() ?: state.liveUrl,
-                previewError = null,
-            )
-        }
-    }
-
     fun hintForSsid(ssid: String): String = when {
         ssid.isBlank() -> "常见热点名包含 CARDV、DVR、Papago"
         ProtocolDetector.looksLikeDashcam(ssid) -> "这个名称很像记录仪热点"

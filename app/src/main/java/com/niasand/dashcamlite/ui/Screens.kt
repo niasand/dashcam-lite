@@ -181,7 +181,6 @@ private fun PreviewScreen(state: UiState, model: DashcamViewModel, padding: Padd
             Button(onClick = model::toggleRecord, enabled = state.connected) {
                 Text(if (state.recording) "停止录像" else "开始录像")
             }
-            OutlinedButton(onClick = model::switchCamera, enabled = state.connected) { Text("切换镜头") }
             OutlinedButton(onClick = model::openPreview, enabled = state.connected) { Text("重试画面") }
         }
         Text("画面走记录仪热点本身，不经过手机的移动网络。离开本页会恢复录像。", color = Color(0xFF9BB4C8))
