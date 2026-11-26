@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +36,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -41,7 +48,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
@@ -185,9 +194,21 @@ private fun FilesScreen(state: UiState, model: DashcamViewModel, padding: Paddin
     Column(Modifier.fillMaxSize().padding(padding).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(if (state.connected) "记录仪文件" else "文件（未连接）", color = Color.White, style = MaterialTheme.typography.titleLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(MediaKind.NORMAL to "普通", MediaKind.EVENT to "紧急", MediaKind.PHOTO to "照片").forEach { (kind, label) ->
+            listOf(MediaKind.NORMAL to "视频", MediaKind.EVENT to "紧急", MediaKind.PHOTO to "照片").forEach { (kind, label) ->
                 FilterChip(selected = state.kind == kind, onClick = { model.loadFiles(kind) }, label = { Text(label) })
             }
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = state.fileViewMode == FileViewMode.PREVIEW,
+                onClick = { model.setFileViewMode(FileViewMode.PREVIEW) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            ) { Text("预览") }
+            SegmentedButton(
+                selected = state.fileViewMode == FileViewMode.LIST,
+                onClick = { model.setFileViewMode(FileViewMode.LIST) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            ) { Text("列表") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = model::downloadSelected, enabled = state.selected.isNotEmpty()) { Text("下载") }
@@ -200,25 +221,80 @@ private fun FilesScreen(state: UiState, model: DashcamViewModel, padding: Paddin
             }
         }
         if (state.files.isEmpty()) {
-            Text("这里还没有文件。连接记录仪后可以选择普通、紧急或照片。", color = Color(0xFF9BB4C8), modifier = Modifier.padding(top = 12.dp))
-        }
-        LazyColumn(Modifier.weight(1f)) {
-            items(state.files, key = { it.url }) { file ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(checked = file.url in state.selected, onCheckedChange = { model.toggle(file) })
-                    FileThumb(file.thumbUrl ?: file.url)
-                    Column(Modifier.weight(1f).clickable { model.showFile(file) }) {
-                        Text(file.name, color = Color.White)
-                        Text("${file.time} · ${file.size / 1024} KB · 点按预览", color = Color(0xFF9BB4C8))
-                    }
-                }
-            }
+            Text("这里还没有文件。连接记录仪后可以选择视频、紧急或照片。", color = Color(0xFF9BB4C8), modifier = Modifier.padding(top = 12.dp))
+        } else if (state.fileViewMode == FileViewMode.PREVIEW) {
+            FilePreviewGrid(state, model, Modifier.weight(1f))
+        } else {
+            FileNameList(state, model, Modifier.weight(1f))
         }
         state.openFile?.let { file -> FilePreviewDialog(file) { model.showFile(null) } }
     }
+}
+
+@Composable
+private fun FilePreviewGrid(state: UiState, model: DashcamViewModel, modifier: Modifier) {
+    LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(state.files, key = { it.url }) { file ->
+            Column(Modifier.clickable { model.showFile(file) }) {
+                BoxWithCheckbox(file, model) {
+                    FileThumb(file.thumbUrl ?: file.url, edge = 120)
+                }
+                Text(file.name, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(fileMeta(file), color = Color(0xFF9BB4C8), maxLines = 2)
+                DownloadNote(state, file.name)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileNameList(state: UiState, model: DashcamViewModel, modifier: Modifier) {
+    LazyColumn(modifier) {
+        items(state.files, key = { it.url }) { file ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = file.url in state.selected, onCheckedChange = { model.toggle(file) })
+                Column(Modifier.weight(1f).clickable { model.showFile(file) }) {
+                    Text(file.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(fileMeta(file), color = Color(0xFF9BB4C8))
+                    DownloadNote(state, file.name)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoxWithCheckbox(file: MediaFile, model: DashcamViewModel, thumb: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(120.dp)) {
+        thumb()
+        Checkbox(
+            checked = stateSelected(file, model),
+            onCheckedChange = { model.toggle(file) },
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+    }
+}
+
+private fun stateSelected(file: MediaFile, model: DashcamViewModel): Boolean = file.url in model.state.selected
+
+@Composable
+private fun DownloadNote(state: UiState, name: String) {
+    val row = state.downloads.lastOrNull { it.name == name } ?: return
+    val line = row.error ?: if (row.done) "已保存" else return
+    Text(line, color = if (row.error != null) Color(0xFFFFB4A8) else Color(0xFF9BB4C8), maxLines = 3)
+}
+
+private fun fileMeta(file: MediaFile): String {
+    val size = if (file.size >= 1024 * 1024) {
+        "%.1f MB".format(file.size / (1024.0 * 1024.0))
+    } else {
+        "${file.size / 1024} KB"
+    }
+    return listOf(file.time, size).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 @Composable

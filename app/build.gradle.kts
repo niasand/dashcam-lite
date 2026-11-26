@@ -12,8 +12,8 @@ android {
         applicationId = "com.niasand.dashcamlite"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.1.2"
+        versionCode = 5
+        versionName = "1.1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -84,5 +84,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-rtsp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

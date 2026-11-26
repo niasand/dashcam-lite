@@ -18,6 +18,7 @@ import com.niasand.dashcamlite.service.ConnectionService
 import com.niasand.dashcamlite.session.DashcamRuntime
 import com.niasand.dashcamlite.session.GalleryStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -44,6 +45,7 @@ data class UiState(
     val liveIndex: Int = 0,
     val previewError: String? = null,
     val openFile: MediaFile? = null,
+    val fileViewMode: FileViewMode = FileViewMode.PREVIEW,
 )
 
 class DashcamViewModel : ViewModel() {
@@ -52,12 +54,25 @@ class DashcamViewModel : ViewModel() {
     private lateinit var wifi: WifiBinder
     private lateinit var gallery: GalleryStore
     private lateinit var app: Context
+    private lateinit var viewModes: FileViewModeStore
 
     fun attach(context: Context) {
         if (this::app.isInitialized) return
         app = context.applicationContext
         wifi = WifiBinder(app)
         gallery = GalleryStore(app)
+        viewModes = FileViewModeStore(app)
+        viewModelScope.launch {
+            viewModes.mode.collect { mode ->
+                state = state.copy(fileViewMode = mode)
+            }
+        }
+    }
+
+    fun setFileViewMode(mode: FileViewMode) {
+        if (state.fileViewMode == mode) return
+        state = state.copy(fileViewMode = mode)
+        viewModelScope.launch { viewModes.set(mode) }
     }
 
     fun onPermissions(result: Map<String, Boolean>) {
