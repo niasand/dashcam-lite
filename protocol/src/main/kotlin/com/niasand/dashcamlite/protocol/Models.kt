@@ -57,6 +57,16 @@ interface HttpTransport {
         } ?: dest.length()
         onProgress(dest.length(), total)
     }
+
+    /** 不发送 Range。记录仪常把 Range 回成 416，整次下载就失败。 */
+    fun writeFresh(url: String, dest: java.io.File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        if (dest.exists()) dest.delete()
+        val body = getBytes(url, null)
+        if (body.code !in 200..299) error("HTTP ${body.code} $url")
+        dest.parentFile?.mkdirs()
+        dest.writeBytes(body.bytes)
+        onProgress(dest.length(), body.contentLength ?: dest.length())
+    }
 }
 
 data class HttpBody(
@@ -111,6 +121,19 @@ class OkHttpTransport(
                 else -> dest.length()
             }
             onProgress(dest.length(), total)
+        }
+    }
+
+    override fun writeFresh(url: String, dest: java.io.File, onProgress: (Long, Long) -> Unit) {
+        if (dest.exists()) dest.delete()
+        dest.parentFile?.mkdirs()
+        val request = okhttp3.Request.Builder().url(url).header("Connection", "close").build()
+        client.newCall(request).execute().use { response ->
+            val body = response.body ?: error("HTTP ${response.code} $url 没有响应体")
+            if (response.code !in 200..299) error("HTTP ${response.code} $url")
+            dest.outputStream().use { output -> body.byteStream().use { it.copyTo(output) } }
+            val reported = response.header("Content-Length")?.toLongOrNull() ?: dest.length()
+            onProgress(dest.length(), reported)
         }
     }
 

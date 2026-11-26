@@ -3,17 +3,75 @@ package com.niasand.dashcamlite.protocol
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 
-/** 把记录仪返回的路径拼成手机要请求的 HTTP 地址。 */
+/**
+ * 把记录仪返回的路径拼成手机要请求的 HTTP 地址。
+ * 原版取第一个 `/` 之后的部分，所以 `A:\...`、`SD:\...` 都会丢掉盘符。
+ * 没有盘符时保留整段目录，避免把 `DCIM/MOVIE` 裁成 `/MOVIE`。
+ */
 fun httpFileUrl(host: String, remotePath: String): String {
     val trimmed = remotePath.trim()
     if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) return trimmed
     val normalized = trimmed.replace('\\', '/')
+    val slash = normalized.indexOf('/')
     val path = when {
         normalized.startsWith("/") -> normalized
-        Regex("^[A-Za-z]:/").containsMatchIn(normalized) -> normalized.substring(normalized.indexOf('/'))
-        else -> "/$normalized"
+        slash >= 0 && normalized.substring(0, slash).contains(':') -> normalized.substring(slash)
+        slash >= 0 && !normalized.contains(':') -> "/$normalized"
+        else -> "/${normalized.substringAfter(':')}"
     }
     return "http://$host$path"
+}
+
+/** 同一条文件在各芯片上可能出现的下载地址，按原版路径优先。 */
+object DownloadUrls {
+    fun candidates(vendor: String, host: String, remotePath: String, name: String): List<String> {
+        val fileName = name.substringAfterLast('\\').substringAfterLast('/').ifBlank {
+            remotePath.substringAfterLast('\\').substringAfterLast('/')
+        }
+        val primary = httpFileUrl(host, remotePath.ifBlank { fileName })
+        val extras = when (vendor) {
+            "novatek", "ark" -> listOf(
+                "http://$host/DCIM/MOVIE/$fileName",
+                "http://$host/DCIM/PHOTO/$fileName",
+                "http://$host/CARDV/MOVIE/$fileName",
+                "http://$host/CARDV/PHOTO/$fileName",
+                "http://$host/MOVIE/$fileName",
+                "http://$host/$fileName",
+            )
+            "mstar" -> listOf(
+                "http://$host/SD/Normal/F/$fileName",
+                "http://$host/SD/Event/F/$fileName",
+                "http://$host/SD/Photo/F/$fileName",
+                "http://$host/SD/Normal/$fileName",
+            )
+            "hisilicon" -> listOf(
+                "http://$host/norm/$fileName",
+                "http://$host/emr/$fileName",
+                "http://$host/photo/$fileName",
+                "http://$host/sd/norm/$fileName",
+            )
+            "goke" -> listOf(
+                "http://$host/sdcard/DVR/VIDEO/$fileName",
+                "http://$host/sdcard/DVR/EVENT/$fileName",
+                "http://$host/sdcard/DVR/PIC/$fileName",
+            )
+            "grain" -> listOf("http://$host/$fileName")
+            "jieli" -> listOf(
+                "http://$host:8080/${remotePath.trim().trimStart('/')}",
+                "http://$host:8080/$fileName",
+            )
+            else -> emptyList()
+        }
+        return (listOf(primary) + extras).map { it.trim() }.filter { it.startsWith("http") }.distinct()
+    }
+}
+
+/** 记录仪用 XML/JSON 拒绝下载时，正文很短且不是媒体。 */
+fun looksLikeCameraErrorBody(head: ByteArray, totalLength: Long): Boolean {
+    if (totalLength <= 0L) return true
+    if (totalLength > 256 * 1024) return false
+    val text = head.toString(Charsets.UTF_8).trimStart()
+    return text.startsWith("<") || text.startsWith("{") || text.startsWith("<?xml", true)
 }
 
 /**

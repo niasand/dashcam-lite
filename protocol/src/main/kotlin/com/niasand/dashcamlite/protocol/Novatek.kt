@@ -216,8 +216,12 @@ class NovatekClient(
                 .findAll(xml)
             return files.map { block ->
                 val body = block.groupValues[1]
-                val path = XmlSnips.first(body, "FPATH").orEmpty()
-                val name = XmlSnips.first(body, "NAME") ?: path.substringAfterLast('\\').substringAfterLast('/')
+                val path = XmlSnips.first(body, "FPATH")
+                    ?: XmlSnips.first(body, "PATH")
+                    ?: XmlSnips.first(body, "FilePath")
+                    ?: ""
+                val name = XmlSnips.first(body, "NAME")
+                    ?: path.substringAfterLast('\\').substringAfterLast('/').ifBlank { "file" }
                 val attr = XmlSnips.first(body, "ATTR")?.toIntOrNull() ?: 0
                 val size = XmlSnips.first(body, "SIZE")?.toLongOrNull() ?: 0L
                 val time = XmlSnips.first(body, "TIME").orEmpty()

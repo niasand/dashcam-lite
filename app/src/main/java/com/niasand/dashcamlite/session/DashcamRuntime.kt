@@ -1,7 +1,9 @@
 package com.niasand.dashcamlite.session
 
 import com.niasand.dashcamlite.net.DashcamLink
+import com.niasand.dashcamlite.protocol.DownloadUrls
 import com.niasand.dashcamlite.protocol.DashcamClient
+import com.niasand.dashcamlite.protocol.FileDownloader
 import com.niasand.dashcamlite.protocol.DeviceInfo
 import com.niasand.dashcamlite.protocol.JieliClient
 import com.niasand.dashcamlite.protocol.MediaFile
@@ -30,6 +32,8 @@ object DashcamRuntime {
     @Volatile var inPlayback: Boolean = false
 
     private val heartbeat = AtomicBoolean(false)
+    private val pauseHeartbeat = AtomicBoolean(false)
+    private val heartbeatInFlight = AtomicBoolean(false)
     private var heartbeatThread: Thread? = null
     private var notifySocket: Socket? = null
     private val resumed = AtomicBoolean(false)
@@ -82,10 +86,38 @@ object DashcamRuntime {
     }
 
     fun ensureRecording() {
+        if (pauseHeartbeat.get()) return
         val current = client ?: return
         current.resumeRecording()
         inPlayback = false
         resumed.set(true)
+    }
+
+    /**
+     * 记录仪的 HTTP 服务通常同时只处理一个请求。下载前停心跳、切到回放，
+     * 否则文件 GET 会被 cmd=3016 打断，或在录像模式下被拒绝。
+     */
+    fun <T> withQuietLink(block: () -> T): T {
+        pauseHeartbeat.set(true)
+        val deadline = System.currentTimeMillis() + 8_000
+        while (heartbeatInFlight.get() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50)
+        }
+        try {
+            runCatching {
+                client?.enterPlayback()
+                inPlayback = true
+            }
+            return block()
+        } finally {
+            pauseHeartbeat.set(false)
+        }
+    }
+
+    fun fetchToFile(file: MediaFile, dest: java.io.File, onProgress: (Long, Long) -> Unit): String {
+        val current = requireClient()
+        val urls = DownloadUrls.candidates(current.vendor, current.host, file.remotePath, file.name)
+        return FileDownloader(DashcamLink.transport()).downloadFirst(urls, dest, onProgress)
     }
 
     fun disconnect(sendResume: Boolean) {
@@ -129,7 +161,14 @@ object DashcamRuntime {
         heartbeat.set(true)
         heartbeatThread = thread(name = "dashcam-heartbeat", isDaemon = true) {
             while (heartbeat.get()) {
-                runCatching { client?.heartbeat() }
+                if (!pauseHeartbeat.get()) {
+                    heartbeatInFlight.set(true)
+                    try {
+                        runCatching { client?.heartbeat() }
+                    } finally {
+                        heartbeatInFlight.set(false)
+                    }
+                }
                 try {
                     Thread.sleep(5000)
                 } catch (_: InterruptedException) {

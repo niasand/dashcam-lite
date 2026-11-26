@@ -16,6 +16,14 @@ class MediaPathTest {
     }
 
     @Test
+    fun sdVolumePrefixIsStrippedLikeTheOriginalApp() {
+        assertEquals(
+            "http://192.168.1.254/DCIM/MOVIE/a.MOV",
+            httpFileUrl("192.168.1.254", "SD:\\DCIM\\MOVIE\\a.MOV"),
+        )
+    }
+
+    @Test
     fun pathWithoutDriveLetterIsNotStripped() {
         assertEquals(
             "http://192.168.1.254/DCIM/MOVIE/a.MOV",
@@ -66,6 +74,56 @@ class MediaPathTest {
             CameraHost.pick("192.168.1.20", listOf("192.168.1.20"), "192.168.1.254"),
         )
         assertEquals("10.0.0.1", CameraHost.pick(null, emptyList(), "10.0.0.1"))
+    }
+
+    @Test
+    fun downloadCandidatesKeepPrimaryAndFamilyFallbacks() {
+        val novatek = DownloadUrls.candidates(
+            "novatek",
+            "192.168.1.254",
+            "SD:\\DCIM\\MOVIE\\a.MOV",
+            "a.MOV",
+        )
+        assertEquals("http://192.168.1.254/DCIM/MOVIE/a.MOV", novatek.first())
+        assertTrue(novatek.any { it.endsWith("/CARDV/MOVIE/a.MOV") })
+        val mstar = DownloadUrls.candidates("mstar", "192.72.1.1", "/SD/Normal/F/a.MOV", "a.MOV")
+        assertEquals("http://192.72.1.1/SD/Normal/F/a.MOV", mstar.first())
+        val jieli = DownloadUrls.candidates("jieli", "192.168.1.1", "mnt/sd/a.MOV", "a.MOV")
+        assertTrue(jieli.any { it.startsWith("http://192.168.1.1:8080/") })
+    }
+
+    @Test
+    fun xmlErrorBodyIsNotAVideo() {
+        assertTrue(looksLikeCameraErrorBody("<Function><Status>-1</Status></Function>".toByteArray(), 40))
+        assertFalse(looksLikeCameraErrorBody(byteArrayOf(0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70), 2_000_000))
+    }
+
+    @Test
+    fun downloadFirstSkipsXmlAndUsesTheNextUrl() {
+        val http = object : HttpTransport {
+            val hits = mutableListOf<String>()
+            override fun getText(url: String) = getBytes(url).text()
+            override fun getBytes(url: String, rangeFrom: Long?): HttpBody {
+                hits += url
+                assertEquals(null, rangeFrom)
+                return if (url.contains("/CARDV/")) {
+                    HttpBody(200, "ftyp-video-bytes-padding".toByteArray(), 24)
+                } else {
+                    HttpBody(200, "<Function><Status>-1</Status></Function>".toByteArray(), 40)
+                }
+            }
+        }
+        val dest = java.io.File.createTempFile("download", ".mov")
+        val used = FileDownloader(http).downloadFirst(
+            listOf(
+                "http://192.168.1.254/DCIM/MOVIE/a.MOV",
+                "http://192.168.1.254/CARDV/MOVIE/a.MOV",
+            ),
+            dest,
+        )
+        assertEquals("http://192.168.1.254/CARDV/MOVIE/a.MOV", used)
+        assertEquals(2, http.hits.size)
+        dest.delete()
     }
 
     @Test

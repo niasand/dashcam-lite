@@ -167,9 +167,14 @@ class DashcamViewModel : ViewModel() {
             chosen.forEachIndexed { index, file ->
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        gallery.downloadToGallery(file) { done, total ->
-                            val progress = if (total <= 0) 0f else done.toFloat() / total
-                            rows[index] = rows[index].copy(progress = progress)
+                        val cache = java.io.File(app.cacheDir, "downloads")
+                        val partial = java.io.File(cache, "${file.name.hashCode()}.part")
+                        DashcamRuntime.withQuietLink {
+                            DashcamRuntime.fetchToFile(file, partial) { done, total ->
+                                val progress = if (total <= 0) 0f else done.toFloat() / total
+                                rows[index] = rows[index].copy(progress = progress)
+                            }
+                            gallery.publish(file, partial)
                         }
                     }
                 }
