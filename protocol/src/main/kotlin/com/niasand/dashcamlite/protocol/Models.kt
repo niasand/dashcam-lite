@@ -42,6 +42,21 @@ data class CommandTrace(val method: String, val urlOrFrame: String)
 interface HttpTransport {
     fun getText(url: String): String
     fun getBytes(url: String, rangeFrom: Long? = null): HttpBody
+
+    fun writeToFile(url: String, dest: java.io.File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        dest.parentFile?.mkdirs()
+        val existing = if (dest.exists()) dest.length() else 0L
+        val body = getBytes(url, if (existing > 0) existing else null)
+        when {
+            body.code == 206 && existing > 0 -> dest.appendBytes(body.bytes)
+            body.code in 200..299 -> dest.writeBytes(body.bytes)
+            else -> error("HTTP ${body.code} $url")
+        }
+        val total = body.contentLength?.let { len ->
+            if (body.code == 206) existing + len else len
+        } ?: dest.length()
+        onProgress(dest.length(), total)
+    }
 }
 
 data class HttpBody(
@@ -72,6 +87,33 @@ class OkHttpTransport(
         }
     }
 
+    override fun writeToFile(url: String, dest: java.io.File, onProgress: (Long, Long) -> Unit) {
+        dest.parentFile?.mkdirs()
+        val existing = if (dest.exists()) dest.length() else 0L
+        val builder = okhttp3.Request.Builder().url(url).header("Connection", "close")
+        if (existing > 0) builder.header("Range", "bytes=$existing-")
+        client.newCall(builder.build()).execute().use { response ->
+            val body = response.body ?: error("HTTP ${response.code} $url 没有响应体")
+            val code = response.code
+            when {
+                code == 206 && existing > 0 -> java.io.FileOutputStream(dest, true).use { output ->
+                    body.byteStream().use { it.copyTo(output) }
+                }
+                code in 200..299 -> dest.outputStream().use { output ->
+                    body.byteStream().use { it.copyTo(output) }
+                }
+                else -> error("HTTP $code $url")
+            }
+            val reported = response.header("Content-Length")?.toLongOrNull()
+            val total = when {
+                code == 206 && reported != null -> existing + reported
+                reported != null && code != 206 -> reported
+                else -> dest.length()
+            }
+            onProgress(dest.length(), total)
+        }
+    }
+
     companion object {
         fun defaultClient(): okhttp3.OkHttpClient {
             val seconds = java.util.concurrent.TimeUnit.SECONDS
@@ -96,6 +138,7 @@ interface DashcamClient {
     fun listFiles(kind: MediaKind): List<MediaFile>
     fun delete(file: MediaFile)
     fun liveUrl(): String
+    fun liveCandidates(): List<String> = LiveCatalog.of(vendor, host)
     fun enterPlayback()
     fun startRecord()
     fun stopRecord()

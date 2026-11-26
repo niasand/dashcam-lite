@@ -6,17 +6,17 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.niasand.dashcamlite.net.DashcamLink
 import com.niasand.dashcamlite.protocol.FileDownloader
 import com.niasand.dashcamlite.protocol.HttpTransport
 import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
-import com.niasand.dashcamlite.protocol.OkHttpTransport
 import java.io.File
 
 class GalleryStore(private val context: Context) {
     fun downloadToGallery(
         file: MediaFile,
-        transport: HttpTransport = OkHttpTransport(),
+        transport: HttpTransport = DashcamLink.transport(),
         onProgress: (Long, Long) -> Unit = { _, _ -> },
     ): Uri {
         val cache = File(context.cacheDir, "downloads")

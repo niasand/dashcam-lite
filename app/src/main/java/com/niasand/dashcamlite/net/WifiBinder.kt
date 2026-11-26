@@ -31,11 +31,10 @@ class WifiBinder(context: Context) {
             .build()
         val created = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                val ok = connectivity.bindProcessToNetwork(network)
+                DashcamLink.set(network)
+                connectivity.bindProcessToNetwork(network)
                 val host = gateway(network)
-                main.post {
-                    if (ok) onReady(host) else onLost("绑定记录仪网络失败")
-                }
+                main.post { onReady(host) }
             }
 
             override fun onUnavailable() {
@@ -43,6 +42,7 @@ class WifiBinder(context: Context) {
             }
 
             override fun onLost(network: Network) {
+                if (DashcamLink.current() == network) DashcamLink.set(null)
                 connectivity.bindProcessToNetwork(null)
                 main.post { onLost("记录仪 Wi-Fi 已断开") }
             }
@@ -67,6 +67,7 @@ class WifiBinder(context: Context) {
             .build()
         val created = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
+                DashcamLink.set(network)
                 connectivity.bindProcessToNetwork(network)
                 val host = gateway(network)
                 main.post { onReady(host) }
@@ -77,6 +78,7 @@ class WifiBinder(context: Context) {
             }
 
             override fun onLost(network: Network) {
+                if (DashcamLink.current() == network) DashcamLink.set(null)
                 connectivity.bindProcessToNetwork(null)
                 main.post { onLost("热点 $ssid 已断开") }
             }
@@ -93,9 +95,20 @@ class WifiBinder(context: Context) {
         return network?.let { gateway(it) }
     }
 
+    /** 网关，以及这块网卡自己的 IPv4，供 CameraHost 丢掉“把手机自己的地址当成记录仪”。 */
+    fun boundEndpoint(): Pair<String?, List<String>> {
+        val network = DashcamLink.current() ?: return null to emptyList()
+        val link = connectivity.getLinkProperties(network) ?: return null to emptyList()
+        val gateway = link.routes.firstOrNull { it.isDefaultRoute && it.gateway is Inet4Address }
+            ?.gateway?.hostAddress
+        val own = link.linkAddresses.mapNotNull { (it.address as? Inet4Address)?.hostAddress }
+        return gateway to own
+    }
+
     fun release(reason: String) {
         callback?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
         callback = null
+        DashcamLink.set(null)
         connectivity.bindProcessToNetwork(null)
     }
 
@@ -103,6 +116,5 @@ class WifiBinder(context: Context) {
         val link = connectivity.getLinkProperties(network) ?: return null
         val route = link.routes.firstOrNull { it.isDefaultRoute && it.gateway is Inet4Address }
         return (route?.gateway as? Inet4Address)?.hostAddress
-            ?: link.linkAddresses.firstOrNull { it.address is Inet4Address }?.address?.hostAddress
     }
 }

@@ -221,10 +221,7 @@ class NovatekClient(
                 val attr = XmlSnips.first(body, "ATTR")?.toIntOrNull() ?: 0
                 val size = XmlSnips.first(body, "SIZE")?.toLongOrNull() ?: 0L
                 val time = XmlSnips.first(body, "TIME").orEmpty()
-                val normalized = path.replace('\\', '/')
-                val slash = normalized.indexOf('/')
-                val urlPath = if (slash >= 0) normalized.substring(slash) else "/$normalized"
-                val url = "http://$host$urlPath"
+                val url = httpFileUrl(host, path)
                 val picture = name.uppercase().let { it.endsWith("JPG") || it.endsWith("JPEG") }
                 val event = (attr and 1) == 1
                 val kind = when {

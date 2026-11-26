@@ -7,9 +7,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.niasand.dashcamlite.net.WifiBinder
+import com.niasand.dashcamlite.protocol.CameraHost
 import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
 import com.niasand.dashcamlite.protocol.ProtocolDetector
+import com.niasand.dashcamlite.protocol.describeFailure
 import com.niasand.dashcamlite.protocol.SettingItem
 import com.niasand.dashcamlite.service.ConnectionService
 import com.niasand.dashcamlite.session.DashcamRuntime
@@ -37,6 +39,10 @@ data class UiState(
     val settings: List<SettingItem> = emptyList(),
     val busy: Boolean = false,
     val liveUrl: String = "",
+    val liveCandidates: List<String> = emptyList(),
+    val liveIndex: Int = 0,
+    val previewError: String? = null,
+    val openFile: MediaFile? = null,
 )
 
 class DashcamViewModel : ViewModel() {
@@ -67,7 +73,8 @@ class DashcamViewModel : ViewModel() {
     fun connect(useSpecifier: Boolean) {
         state = state.copy(busy = true, status = "正在绑定记录仪网络…")
         val ready: (String?) -> Unit = { gateway ->
-            val host = state.host.ifBlank { gateway ?: "192.168.1.254" }
+            val (boundGateway, own) = wifi.boundEndpoint()
+            val host = CameraHost.pick(boundGateway ?: gateway, own, state.host)
             handshake(host)
         }
         val lost: (String) -> Unit = { message ->
@@ -96,7 +103,10 @@ class DashcamViewModel : ViewModel() {
                     sd = "${info.sdStatusText}${info.freeBytes?.let { " · 剩余 ${it / 1024 / 1024} MB" } ?: ""}",
                     recording = info.recording,
                     host = info.host,
-                    liveUrl = DashcamRuntime.client?.liveUrl().orEmpty(),
+                    liveCandidates = DashcamRuntime.client?.liveCandidates().orEmpty(),
+                    liveIndex = 0,
+                    liveUrl = DashcamRuntime.client?.liveCandidates()?.firstOrNull().orEmpty(),
+                    previewError = null,
                 )
             }.onFailure {
                 state = state.copy(busy = false, connected = false, status = it.message ?: "连接失败")
@@ -127,9 +137,17 @@ class DashcamViewModel : ViewModel() {
                 }
             }
             result.onSuccess { files ->
-                state = state.copy(busy = false, files = files, selected = emptySet(), status = "共 ${files.size} 个文件")
+                val note = if (files.isEmpty()) {
+                    "已连接 ${state.vendor} @ ${state.host}，这一类文件是空的。换「普通 / 紧急 / 照片」再试。"
+                } else {
+                    "共 ${files.size} 个文件（${state.vendor} @ ${state.host}）"
+                }
+                state = state.copy(busy = false, files = files, selected = emptySet(), status = note)
             }.onFailure {
-                state = state.copy(busy = false, status = it.message ?: "读取文件失败")
+                state = state.copy(
+                    busy = false,
+                    status = describeFailure(state.vendor.ifBlank { "未知" }, state.host, "读取文件", it),
+                )
             }
         }
     }
@@ -156,13 +174,28 @@ class DashcamViewModel : ViewModel() {
                     }
                 }
                 rows[index] = if (result.isSuccess) {
-                    rows[index].copy(progress = 1f, done = true)
+                    rows[index].copy(progress = 1f, done = true, error = null)
                 } else {
-                    rows[index].copy(error = result.exceptionOrNull()?.message ?: "失败，可重试")
+                    rows[index].copy(
+                        error = describeFailure(
+                            state.vendor.ifBlank { "未知" },
+                            state.host,
+                            "下载 ${file.name}",
+                            result.exceptionOrNull() ?: IllegalStateException("未知错误"),
+                        ),
+                    )
                 }
                 state = state.copy(downloads = rows.toList())
             }
-            state = state.copy(busy = false, status = "下载结束。成功的文件在相册 DashcamLite 目录。")
+            val failed = rows.count { it.error != null }
+            state = state.copy(
+                busy = false,
+                status = if (failed == 0) {
+                    "下载结束。视频在相册 Movies/DashcamLite，照片在 Pictures/DashcamLite。"
+                } else {
+                    "有 $failed 个文件没下下来，原因写在文件名下面。"
+                },
+            )
         }
     }
 
@@ -219,10 +252,65 @@ class DashcamViewModel : ViewModel() {
         }
     }
 
+    fun openPreview() {
+        if (!state.connected) {
+            state = state.copy(previewError = "还没有连接记录仪，实时画面无法打开。")
+            return
+        }
+        viewModelScope.launch {
+            val prepared = withContext(Dispatchers.IO) { runCatching { DashcamRuntime.prepareLive() } }
+            val urls = DashcamRuntime.client?.liveCandidates().orEmpty()
+            state = if (prepared.isFailure) {
+                state.copy(
+                    previewError = describeFailure(state.vendor, state.host, "打开预览", prepared.exceptionOrNull()!!),
+                    liveCandidates = urls,
+                    liveUrl = urls.firstOrNull().orEmpty(),
+                )
+            } else {
+                state.copy(
+                    previewError = null,
+                    liveCandidates = urls,
+                    liveIndex = 0,
+                    liveUrl = urls.firstOrNull().orEmpty(),
+                    recording = true,
+                    status = "正在打开 ${urls.firstOrNull()?.substringBefore('?') ?: "画面"}",
+                )
+            }
+        }
+    }
+
+    fun previewFailed(message: String) {
+        val next = state.liveIndex + 1
+        if (next < state.liveCandidates.size) {
+            val url = state.liveCandidates[next]
+            state = state.copy(
+                liveIndex = next,
+                liveUrl = url,
+                previewError = null,
+                status = "这一路没有画面，改试 ${url.substringAfter("://").substringBefore('/')}",
+            )
+        } else {
+            state = state.copy(
+                previewError = "实时画面打不开（${state.vendor} @ ${state.host}）：$message",
+            )
+        }
+    }
+
+    fun showFile(file: MediaFile?) {
+        state = state.copy(openFile = file)
+    }
+
     fun switchCamera() {
         viewModelScope.launch {
             val side = withContext(Dispatchers.IO) { runCatching { DashcamRuntime.client?.switchCamera() }.getOrNull() }
-            state = state.copy(status = "镜头：${side ?: "未连接"}", liveUrl = DashcamRuntime.client?.liveUrl().orEmpty())
+            val urls = DashcamRuntime.client?.liveCandidates().orEmpty()
+            state = state.copy(
+                status = "镜头：${side ?: "未连接"}",
+                liveCandidates = urls.ifEmpty { state.liveCandidates },
+                liveIndex = 0,
+                liveUrl = urls.firstOrNull() ?: state.liveUrl,
+                previewError = null,
+            )
         }
     }
 

@@ -1,8 +1,8 @@
 package com.niasand.dashcamlite.ui
 
-import android.media.MediaPlayer
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
@@ -36,15 +36,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import com.niasand.dashcamlite.net.DashcamLink
+import com.niasand.dashcamlite.protocol.LiveCatalog
+import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private enum class Tab(val label: String) { Connect("连接"), Preview("预览"), Files("文件"), Settings("设置") }
 
@@ -67,6 +73,7 @@ fun DashcamLiteApp(model: DashcamViewModel) {
                             onClick = {
                                 tab = item
                                 if (item == Tab.Files) model.loadFiles(state.kind)
+                                if (item == Tab.Preview) model.openPreview()
                                 if (item == Tab.Settings) model.loadSettings()
                             },
                             icon = {
@@ -139,38 +146,34 @@ private fun InfoCard(state: UiState) {
 private fun PreviewScreen(state: UiState, model: DashcamViewModel, padding: PaddingValues) {
     Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (state.connected) "实时预览" else "预览（未连接）", color = Color.White, style = MaterialTheme.typography.titleLarge)
-        Text(state.liveUrl.ifBlank { "连接后会显示 RTSP 或 MJPEG 地址" }, color = Color(0xFF9BB4C8))
-        AndroidView(
-            factory = { context ->
-                SurfaceView(context).apply {
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        var player: MediaPlayer? = null
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            if (state.liveUrl.isBlank()) return
-                            player = MediaPlayer().apply {
-                                setDisplay(holder)
-                                setDataSource(state.liveUrl)
-                                setOnPreparedListener { it.start() }
-                                prepareAsync()
-                            }
-                        }
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            player?.release()
-                            player = null
-                        }
-                    })
-                }
-            },
-            modifier = Modifier.fillMaxWidth().weight(1f),
+        Text(
+            state.liveUrl.ifBlank { "连接后会依次尝试 RTSP 和 MJPEG" },
+            color = Color(0xFF9BB4C8),
         )
+        if (state.previewError != null) {
+            Text(state.previewError, color = Color(0xFFFFB4A8))
+        }
+        if (state.connected && state.liveUrl.isNotBlank() && state.previewError == null) {
+            CameraPicture(
+                url = state.liveUrl,
+                onError = model::previewFailed,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        } else {
+            Text(
+                if (state.connected) "正在准备画面…" else "未连接时这里是黑的，因为还没有记录仪画面。",
+                color = Color(0xFF9BB4C8),
+                modifier = Modifier.weight(1f),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = model::toggleRecord, enabled = state.connected) {
                 Text(if (state.recording) "停止录像" else "开始录像")
             }
             OutlinedButton(onClick = model::switchCamera, enabled = state.connected) { Text("切换镜头") }
+            OutlinedButton(onClick = model::openPreview, enabled = state.connected) { Text("重试画面") }
         }
-        Text("离开此页或把应用退到后台时，会发送恢复录像指令。", color = Color(0xFF9BB4C8))
+        Text("画面走记录仪热点本身，不经过手机的移动网络。离开本页会恢复录像。", color = Color(0xFF9BB4C8))
     }
 }
 
@@ -200,18 +203,68 @@ private fun FilesScreen(state: UiState, model: DashcamViewModel, padding: Paddin
         LazyColumn(Modifier.weight(1f)) {
             items(state.files, key = { it.url }) { file ->
                 Row(
-                    Modifier.fillMaxWidth().toggleable(file.url in state.selected) { model.toggle(file) }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Checkbox(checked = file.url in state.selected, onCheckedChange = { model.toggle(file) })
-                    Column {
+                    FileThumb(file.thumbUrl ?: file.url)
+                    Column(Modifier.weight(1f).clickable { model.showFile(file) }) {
                         Text(file.name, color = Color.White)
-                        Text("${file.time} · ${file.size / 1024} KB", color = Color(0xFF9BB4C8))
+                        Text("${file.time} · ${file.size / 1024} KB · 点按预览", color = Color(0xFF9BB4C8))
                     }
                 }
             }
         }
+        state.openFile?.let { file -> FilePreviewDialog(file) { model.showFile(null) } }
     }
+}
+
+@Composable
+private fun FileThumb(url: String, edge: Int = 64) {
+    var bitmap by remember(url) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var error by remember(url) { mutableStateOf<String?>(null) }
+    LaunchedEffect(url) {
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val body = DashcamLink.transport().getBytes(url)
+                if (body.code !in 200..299) error("HTTP ${body.code}")
+                val options = BitmapFactory.Options().apply { inSampleSize = if (edge > 64) 2 else 4 }
+                BitmapFactory.decodeByteArray(body.bytes, 0, body.bytes.size, options)?.asImageBitmap()
+                    ?: error("不是图片")
+            }
+        }
+        loaded.onSuccess { bitmap = it }.onFailure { error = it.message }
+    }
+    when {
+        bitmap != null -> Image(bitmap!!, contentDescription = null, modifier = Modifier.size(edge.dp))
+        error != null && edge > 64 -> Text("预览失败：$error", color = Color(0xFFFFB4A8))
+    }
+}
+
+@Composable
+private fun FilePreviewDialog(file: MediaFile, onDismiss: () -> Unit) {
+    var playError by remember(file.url) { mutableStateOf<String?>(null) }
+    val photo = file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(file.name) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(file.url.substringAfter("://").substringBefore("/"), color = Color(0xFF9BB4C8))
+                if (photo) {
+                    FileThumb(file.url, edge = 220)
+                } else {
+                    CameraPicture(
+                        url = file.url,
+                        onError = { playError = it },
+                        modifier = Modifier.fillMaxWidth().size(220.dp),
+                    )
+                    if (playError != null) Text("播放失败：$playError", color = Color(0xFFFFB4A8))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
 }
 
 @Composable

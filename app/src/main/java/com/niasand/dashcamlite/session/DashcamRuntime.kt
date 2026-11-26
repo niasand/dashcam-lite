@@ -1,12 +1,12 @@
 package com.niasand.dashcamlite.session
 
+import com.niasand.dashcamlite.net.DashcamLink
 import com.niasand.dashcamlite.protocol.DashcamClient
 import com.niasand.dashcamlite.protocol.DeviceInfo
 import com.niasand.dashcamlite.protocol.JieliClient
 import com.niasand.dashcamlite.protocol.MediaFile
 import com.niasand.dashcamlite.protocol.MediaKind
 import com.niasand.dashcamlite.protocol.NovatekClient
-import com.niasand.dashcamlite.protocol.OkHttpTransport
 import com.niasand.dashcamlite.protocol.ProtocolDetector
 import com.niasand.dashcamlite.protocol.SettingItem
 import java.net.InetSocketAddress
@@ -37,7 +37,7 @@ object DashcamRuntime {
 
     fun connect(host: String): DeviceInfo {
         disconnect(sendResume = false)
-        val http = OkHttpTransport()
+        val http = DashcamLink.transport()
         val found = ProtocolDetector.detect(host, http)
             ?: error("在 $host 上没有识别到记录仪。请确认手机已连上记录仪热点。")
         val device = found.handshake()
@@ -57,6 +57,13 @@ object DashcamRuntime {
         val list = requireClient().listFiles(kind)
         files = list
         return list
+    }
+
+    /** 预览前回到录像模式，否则记录仪停在回放模式时没有实时画面。 */
+    fun prepareLive() {
+        val current = requireClient()
+        current.resumeRecording()
+        inPlayback = false
     }
 
     fun enterFiles() {
